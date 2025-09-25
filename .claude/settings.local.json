@@ -9,7 +9,9 @@
       "Bash(git branch:*)",
       "Bash(git push:*)",
       "Bash(git pull:*)",
-      "Bash(flutter build:*)"
+      "Bash(flutter build:*)",
+      "Bash(flutter:*)",
+      "Bash(dart:*)"
     ],
     "deny": [],
     "ask": []
