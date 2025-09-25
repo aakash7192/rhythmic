@@ -1,17 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "mcp__github__get_me",
-      "mcp__github__create_repository",
-      "mcp__github__get_file_contents",
-      "mcp__github__create_or_update_file",
-      "mcp__github__create_branch",
-      "Bash(git branch:*)",
-      "Bash(git push:*)",
-      "Bash(git pull:*)",
-      "Bash(flutter build:*)",
-      "Bash(flutter:*)",
-      "Bash(dart:*)"
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []
