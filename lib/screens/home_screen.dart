@@ -4,6 +4,7 @@ import 'package:vibration/vibration.dart';
 import '../theme.dart';
 import '../widgets/tap_circle.dart';
 import '../models/bpm_calculator.dart';
+import 'instrument_player_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,13 +16,15 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late AnimationController _rippleController;
   late AnimationController _pulseController;
+  late AnimationController _timelineController;
   final BPMCalculator _bpmCalculator = BPMCalculator();
   final FocusNode _focusNode = FocusNode();
+  final TextEditingController _bpmTextController = TextEditingController();
 
   bool _isRecording = false;
-  double _currentBPM = 0.0;
   int _tapCount = 0;
   String _recordingTimeLeft = "10";
+  double _manualBPM = 0.0;
 
   @override
   void initState() {
@@ -36,6 +39,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
     _pulseController.repeat(reverse: true);
 
+    _timelineController = AnimationController(
+      duration: const Duration(seconds: 1),
+      vsync: this,
+    );
+
     // Request focus when the screen loads
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
@@ -44,7 +52,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _bpmCalculator.onBPMUpdate = (bpm, tapCount, timeLeft) {
       if (mounted) {
         setState(() {
-          _currentBPM = bpm;
+          _manualBPM = bpm;
           _tapCount = tapCount;
           _recordingTimeLeft = timeLeft.toString();
         });
@@ -55,9 +63,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       if (mounted) {
         setState(() {
           _isRecording = false;
-          _currentBPM = finalBPM;
+          _manualBPM = finalBPM;
+          _bpmTextController.text = finalBPM.toStringAsFixed(1);
         });
-        _showResultDialog(finalBPM, totalTaps);
+        _startTimelineAnimation();
       }
     };
   }
@@ -75,7 +84,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       setState(() {
         _isRecording = true;
         _tapCount = 0;
-        _currentBPM = 0.0;
+        _manualBPM = 0.0;
       });
       _bpmCalculator.startRecording();
     }
@@ -83,68 +92,34 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _bpmCalculator.addTap();
   }
 
-  void _showResultDialog(double bpm, int taps) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: AppTheme.surfaceDark,
-          title: const Text(
-            'Recording Complete!',
-            style: TextStyle(color: AppTheme.textLight),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.music_note_rounded,
-                size: 48,
-                color: AppTheme.primaryPurple,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                '${bpm.toStringAsFixed(1)} BPM',
-                style: const TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.accentPink,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '$taps taps in 10 seconds',
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: AppTheme.textSecondary,
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _resetRecording();
-              },
-              child: const Text(
-                'Try Again',
-                style: TextStyle(color: AppTheme.primaryPurple),
-              ),
-            ),
-          ],
-        );
-      },
-    );
+  void _startTimelineAnimation() {
+    if (_manualBPM > 0) {
+      _timelineController.repeat();
+    }
+  }
+
+  void _onManualBPMChanged(String value) {
+    final bpm = double.tryParse(value) ?? 0.0;
+    setState(() {
+      _manualBPM = bpm;
+    });
+    if (bpm > 0) {
+      _timelineController.duration = Duration(milliseconds: (60000 / bpm).round());
+      _startTimelineAnimation();
+    } else {
+      _timelineController.stop();
+    }
   }
 
   void _resetRecording() {
     setState(() {
       _isRecording = false;
-      _currentBPM = 0.0;
+      _manualBPM = 0.0;
       _tapCount = 0;
       _recordingTimeLeft = "10";
     });
+    _bpmTextController.clear();
+    _timelineController.stop();
     _bpmCalculator.reset();
   }
 
@@ -160,9 +135,35 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void dispose() {
     _rippleController.dispose();
     _pulseController.dispose();
+    _timelineController.dispose();
     _bpmCalculator.dispose();
     _focusNode.dispose();
+    _bpmTextController.dispose();
     super.dispose();
+  }
+
+  Widget _buildTimeline() {
+    return AnimatedBuilder(
+      animation: _timelineController,
+      builder: (context, child) {
+        final screenWidth = MediaQuery.of(context).size.width;
+        final lineSpacing = _manualBPM > 0 ? (screenWidth / (_manualBPM / 15)).toDouble() : 0.0;
+        final offset = (_timelineController.value * lineSpacing).toDouble();
+
+        return SizedBox(
+          height: 200,
+          width: double.infinity,
+          child: CustomPaint(
+            painter: TimelinePainter(
+              offset: offset,
+              lineSpacing: lineSpacing,
+              screenWidth: screenWidth,
+              bpm: _manualBPM.toDouble(),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -174,129 +175,252 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         appBar: AppBar(
           title: const Text('Rhythmic'),
           centerTitle: true,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.library_music),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const InstrumentPlayerScreen(),
+                  ),
+                );
+              },
+              tooltip: 'Instruments',
+            ),
+          ],
         ),
         body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              AppTheme.backgroundDark,
-              Color(0xFF1A202C),
-            ],
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                AppTheme.backgroundDark,
+                Color(0xFF1A202C),
+              ],
+            ),
           ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              Expanded(
-                flex: 2,
-                child: Center(
-                  child: Column(
+          child: SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 80,
+                        height: 80,
+                        child: TapCircle(
+                          onTap: _onTapCircle,
+                          rippleController: _rippleController,
+                          pulseController: _pulseController,
+                          isRecording: _isRecording,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (_isRecording) ...[
+                              Text(
+                                'Recording... ${_recordingTimeLeft}s left',
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: AppTheme.accentPink,
+                                ),
+                              ),
+                              Text(
+                                'Taps: $_tapCount',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: AppTheme.textSecondary,
+                                ),
+                              ),
+                            ] else ...[
+                              Text(
+                                'Tap to measure BPM',
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: AppTheme.textLight,
+                                ),
+                              ),
+                              Text(
+                                'Or use SPACE key',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: AppTheme.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      if (_isRecording) ...[
-                        Text(
-                          'Recording...',
-                          style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                                color: AppTheme.accentPink,
-                              ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '${_recordingTimeLeft}s left',
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                color: AppTheme.textSecondary,
-                              ),
-                        ),
-                      ] else ...[
-                        Text(
-                          'Tap to Start',
-                          style: Theme.of(context).textTheme.displayMedium,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Tap the circle or press SPACE to measure BPM',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              Expanded(
-                flex: 4,
-                child: Center(
-                  child: TapCircle(
-                    onTap: _onTapCircle,
-                    rippleController: _rippleController,
-                    pulseController: _pulseController,
-                    isRecording: _isRecording,
-                  ),
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (_currentBPM > 0) ...[
-                      Text(
-                        '${_currentBPM.toStringAsFixed(1)}',
-                        style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                              fontSize: 48,
-                              color: AppTheme.accentPink,
-                              fontWeight: FontWeight.bold,
+                      SizedBox(
+                        width: 100,
+                        child: TextField(
+                          controller: _bpmTextController,
+                          onChanged: _onManualBPMChanged,
+                          keyboardType: TextInputType.number,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.accentPink,
+                          ),
+                          decoration: const InputDecoration(
+                            hintText: '0.0',
+                            hintStyle: TextStyle(color: AppTheme.textSecondary),
+                            border: UnderlineInputBorder(
+                              borderSide: BorderSide(color: AppTheme.primaryPurple),
                             ),
+                            enabledBorder: UnderlineInputBorder(
+                              borderSide: BorderSide(color: AppTheme.primaryPurple),
+                            ),
+                            focusedBorder: UnderlineInputBorder(
+                              borderSide: BorderSide(color: AppTheme.accentPink),
+                            ),
+                          ),
+                        ),
                       ),
+                      const SizedBox(width: 8),
                       const Text(
                         'BPM',
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: 16,
                           color: AppTheme.textSecondary,
-                          letterSpacing: 2,
+                          letterSpacing: 1,
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Taps: $_tapCount',
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              color: AppTheme.textSecondary,
-                            ),
-                      ),
-                    ] else ...[
-                      const Text(
-                        '0.0',
-                        style: TextStyle(
-                          fontSize: 48,
-                          color: AppTheme.textSecondary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const Text(
-                        'BPM',
-                        style: TextStyle(
-                          fontSize: 18,
-                          color: AppTheme.textSecondary,
-                          letterSpacing: 2,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 32),
-                    if (!_isRecording && _currentBPM > 0)
-                      ElevatedButton.icon(
+                      const SizedBox(width: 16),
+                      IconButton(
                         onPressed: _resetRecording,
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Reset'),
+                        icon: const Icon(Icons.refresh, size: 20),
+                        color: AppTheme.textSecondary,
+                        tooltip: 'Reset',
                       ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 20),
+                Expanded(
+                  child: _manualBPM > 0
+                    ? _buildTimeline()
+                    : Center(
+                        child: Text(
+                          'Set BPM to see timeline',
+                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                      ),
+                ),
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
+}
+
+class TimelinePainter extends CustomPainter {
+  final double offset;
+  final double lineSpacing;
+  final double screenWidth;
+  final double bpm;
+
+  TimelinePainter({
+    required this.offset,
+    required this.lineSpacing,
+    required this.screenWidth,
+    required this.bpm,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (bpm <= 0) return;
+
+    final paint = Paint()
+      ..color = AppTheme.primaryPurple.withOpacity(0.6)
+      ..strokeWidth = 2;
+
+    final accentPaint = Paint()
+      ..color = AppTheme.accentPink
+      ..strokeWidth = 3;
+
+    final centerY = size.height / 2;
+
+    if (lineSpacing > 0) {
+      for (double x = -offset; x < screenWidth + lineSpacing; x += lineSpacing) {
+        if (x >= 0 && x <= screenWidth) {
+          final isAccent = ((x + offset) / lineSpacing) % 4 == 0;
+          canvas.drawLine(
+            Offset(x, centerY - 50),
+            Offset(x, centerY + 50),
+            isAccent ? accentPaint : paint,
+          );
+        }
+      }
+    }
+
+    final centerLinePaint = Paint()
+      ..color = AppTheme.textSecondary.withOpacity(0.6)
+      ..strokeWidth = 1;
+
+    canvas.drawLine(
+      Offset(screenWidth / 2, centerY - 80),
+      Offset(screenWidth / 2, centerY + 80),
+      centerLinePaint,
+    );
+
+    final centerX = screenWidth / 2;
+    bool showPinkBar = false;
+
+    for (double x = -offset; x < screenWidth + lineSpacing; x += lineSpacing) {
+      if (x >= 0 && x <= screenWidth) {
+        final distance = (x - centerX).abs();
+        if (distance < 5) {
+          showPinkBar = true;
+          break;
+        }
+      }
+    }
+
+    if (showPinkBar) {
+      final pinkBarPaint = Paint()
+        ..color = AppTheme.accentPink
+        ..strokeWidth = 4;
+
+      canvas.drawLine(
+        Offset(centerX, centerY - 40),
+        Offset(centerX, centerY + 40),
+        pinkBarPaint,
+      );
+    }
+
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: '${bpm.toStringAsFixed(1)} BPM',
+        style: const TextStyle(
+          color: AppTheme.textLight,
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset(screenWidth / 2 - textPainter.width / 2, centerY + 70),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }

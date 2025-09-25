@@ -11,7 +11,10 @@
       "Bash(git pull:*)",
       "Bash(flutter build:*)",
       "Bash(flutter:*)",
-      "Bash(dart:*)"
+      "Bash(dart:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:pub.dev)"
     ],
     "deny": [],
     "ask": []

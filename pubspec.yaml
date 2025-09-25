@@ -36,10 +36,17 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   # For haptic feedback
-  vibration: ^2.0.0
+  vibration: ^1.7.7
 
   # For splash screen
   flutter_native_splash: ^2.4.1
+
+  # For audio playback
+  just_audio: ^0.9.40
+
+  # For sequencing and tempo management
+  flutter_sequencer: ^0.4.4
+
 
 dev_dependencies:
   flutter_test:
@@ -64,9 +71,8 @@ flutter:
   uses-material-design: true
 
   # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+  assets:
+    - assets/instruments/drums/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
